@@ -1,0 +1,7 @@
+node_modules/
+dist/
+source-example/
+
+# Internal docs — keep local only
+ARCHITECTURE.md
+REWRITE.md

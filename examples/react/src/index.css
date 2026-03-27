@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --font-sans: 'Manrope', system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  --bg: #121214;
+  --bg-card: #1a1a1e;
+  --bg-input: #222226;
+  --bg-sidebar: #161618;
+  --bg-hover: #2a2a2e;
+  --bg-active: #2f2f34;
+
+  --border: #2a2a2e;
+  --border-light: #333338;
+
+  --text: #e8e8ea;
+  --text-secondary: #9a9aa0;
+  --text-muted: #6b6b72;
+  --text-faint: #4a4a52;
+
+  --accent: #d4a843;
+  --accent-hover: #e0b84f;
+  --accent-muted: #b8922e;
+
+  --danger: #e5484d;
+  --green: #46a758;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: #000;
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  input:focus-visible,
+  button:focus-visible {
+    outline: none;
+  }
+}

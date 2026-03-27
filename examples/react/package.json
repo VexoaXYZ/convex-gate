@@ -1,0 +1,36 @@
+{
+  "name": "convex-gate-example-react",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "npm-run-all -p dev:*",
+    "dev:frontend": "vite --clearScreen false",
+    "dev:backend": "npx convex dev --typecheck-components",
+    "build": "npx convex codegen && vite build",
+    "preview": "vite preview",
+    "lint": "tsc -p convex && eslint ."
+  },
+  "dependencies": {
+    "convex-gate": "file:../..",
+    "@tailwindcss/vite": "^4.1.13",
+    "better-auth": "1.5.6",
+    "convex": "1.34.1",
+    "convex-helpers": "^0.1.95",
+    "lucide-react": "^0.486.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "sonner": "^2.0.2",
+    "tailwindcss": "^4.1.7",
+    "tw-animate-css": "^1.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.4"
+  }
+}

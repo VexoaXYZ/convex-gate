@@ -1,0 +1,10 @@
+source-example/
+examples/
+tests/
+*.test.ts
+*.test.tsx
+vitest.config.ts
+tsconfig.json
+tsconfig.build.json
+ARCHITECTURE.md
+.env*

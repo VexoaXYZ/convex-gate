@@ -1,0 +1,110 @@
+{
+  "name": "convex-gate",
+  "version": "0.1.0",
+  "description": "A Better Auth adapter and client bridge for Convex. Isolated auth storage, JWT caching, static JWKS, and React bindings.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VexoaXYZ/convex-gate.git"
+  },
+  "homepage": "https://github.com/VexoaXYZ/convex-gate#readme",
+  "bugs": {
+    "url": "https://github.com/VexoaXYZ/convex-gate/issues"
+  },
+  "keywords": [
+    "convex",
+    "better-auth",
+    "auth",
+    "authentication",
+    "adapter",
+    "jwt",
+    "jwks",
+    "react",
+    "session",
+    "convex-component"
+  ],
+  "files": [
+    "dist",
+    "src/component"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "if exist dist rmdir /s /q dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./adapter": {
+      "types": "./dist/adapter/index.d.ts",
+      "default": "./dist/adapter/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "default": "./dist/client/index.js"
+    },
+    "./component": {
+      "types": "./dist/component/index.d.ts",
+      "default": "./dist/component/index.js"
+    },
+    "./plugins": {
+      "types": "./dist/plugins/index.d.ts",
+      "default": "./dist/plugins/index.js"
+    },
+    "./client/plugins": {
+      "types": "./dist/client/plugins/index.d.ts",
+      "default": "./dist/client/plugins/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "default": "./dist/utils/index.js"
+    },
+    "./auth-config": {
+      "types": "./dist/authConfig.d.ts",
+      "default": "./dist/authConfig.js"
+    },
+    "./convex.config": {
+      "@convex-dev/component-source": "./src/component/convex.config.ts",
+      "types": "./dist/component/convex.config.d.ts",
+      "default": "./dist/component/convex.config.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "default": "./dist/react/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "better-auth": "1.5.6",
+    "convex": "^1.34.1",
+    "react": "^18.3.1 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@better-fetch/fetch": "1.1.18",
+    "better-auth": "1.5.6",
+    "convex": "^1.34.1",
+    "convex-helpers": "0.1.114"
+  },
+  "devDependencies": {
+    "@types/node": "24.5.2",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "eslint": "9.36.0",
+    "jsdom": "^29.0.1",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "typescript": "5.9.2",
+    "vitest": "4.0.18"
+  }
+}
