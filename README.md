@@ -1,5 +1,7 @@
 # convex-gate
 
+> **This package is in alpha.** APIs may change between releases. Not recommended for production use yet.
+
 A [Better Auth](https://better-auth.com) adapter for [Convex](https://convex.dev). Auth data lives in an isolated Convex component — separate from your app tables.
 
 ## Features

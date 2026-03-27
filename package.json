@@ -1,6 +1,6 @@
 {
   "name": "convex-gate",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "A Better Auth adapter and client bridge for Convex. Isolated auth storage, JWT caching, static JWKS, and React bindings.",
   "license": "MIT",
   "type": "module",
