@@ -9,6 +9,14 @@ import type {
 export function createComponentBindings(api: AuthComponentApi) {
   return {
     hotPath: {
+      getSessionByToken(args: Parameters<AuthComponentApi["hotPath"]["getSessionByToken"]>[0]) {
+        return api.hotPath.getSessionByToken(args);
+      },
+      getSessionBySessionId(
+        args: Parameters<AuthComponentApi["hotPath"]["getSessionBySessionId"]>[0]
+      ) {
+        return api.hotPath.getSessionBySessionId(args);
+      },
       getSessionWithUserByToken(args: Parameters<AuthComponentApi["hotPath"]["getSessionWithUserByToken"]>[0]) {
         return api.hotPath.getSessionWithUserByToken(args);
       },

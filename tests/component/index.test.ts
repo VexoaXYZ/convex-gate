@@ -20,6 +20,8 @@ function createApi() {
 
   const api: AuthComponentApi = {
     hotPath: {
+      getSessionByToken: vi.fn(async () => session),
+      getSessionBySessionId: vi.fn(async () => session),
       getSessionWithUserByToken: vi.fn(async () => ({ session, user })),
       getSessionWithUserBySessionId: vi.fn(async () => ({ session, user })),
       invalidateSession: vi.fn(async () => undefined),
@@ -72,8 +74,50 @@ describe("createComponentStore", () => {
       where: [{ field: "token", value: "token-1", operator: "eq", connector: "AND" }],
     });
 
-    expect(api.hotPath.getSessionWithUserByToken).toHaveBeenCalledTimes(1);
+    expect(api.hotPath.getSessionByToken).toHaveBeenCalledTimes(1);
+    expect(api.hotPath.getSessionWithUserByToken).not.toHaveBeenCalled();
     expect(api.crud.findOne).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      id: "session-1",
+      token: "token-1",
+    });
+  });
+
+  it("returns null for an expired session even without selecting user", async () => {
+    const { api, session } = createApi();
+    const expiredSession = {
+      ...session,
+      expiresAt: Date.now() - 1_000,
+    };
+    api.hotPath.getSessionByToken = vi.fn(async () => null);
+    api.hotPath.getSessionWithUserByToken = vi.fn(async () => ({
+      session: null,
+      user: null,
+    }));
+    const store = createComponentStore(api);
+
+    const result = await store.findOne({
+      model: "session",
+      where: [{ field: "token", value: "token-1", operator: "eq", connector: "AND" }],
+    });
+
+    expect(api.hotPath.getSessionByToken).toHaveBeenCalledTimes(1);
+    expect(result).toBeNull();
+    void expiredSession;
+  });
+
+  it("uses the session+user hot path when the caller selects user", async () => {
+    const { api } = createApi();
+    const store = createComponentStore(api);
+
+    const result = await store.findOne({
+      model: "session",
+      where: [{ field: "token", value: "token-1", operator: "eq", connector: "AND" }],
+      select: ["id", "token", "user"],
+    });
+
+    expect(api.hotPath.getSessionWithUserByToken).toHaveBeenCalledTimes(1);
+    expect(api.hotPath.getSessionByToken).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       id: "session-1",
       token: "token-1",

@@ -31,9 +31,17 @@ export const getSessionWithUserByTokenArgsValidator = v.object({
   now: v.number(),
 });
 
+export const getSessionByTokenArgsValidator = v.object({
+  token: v.string(),
+});
+
 export const getSessionWithUserBySessionIdArgsValidator = v.object({
   sessionId: v.string(),
   now: v.number(),
+});
+
+export const getSessionBySessionIdArgsValidator = v.object({
+  sessionId: v.string(),
 });
 
 export const invalidateSessionArgsValidator = v.object({

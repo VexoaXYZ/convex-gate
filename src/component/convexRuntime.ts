@@ -5,7 +5,7 @@ import type {
   AuthComponentSession,
   AuthComponentUser,
 } from "./index.js";
-import { resolveSessionWithUser } from "./hotPath.js";
+import { resolveSession, resolveSessionWithUser } from "./hotPath.js";
 
 type Direction = "asc" | "desc";
 
@@ -40,9 +40,154 @@ export interface ConvexDbLike {
   delete(id: string): Promise<void>;
 }
 
+type WhereClause = Readonly<Record<string, unknown>>;
+
+const INDEXED_FIELDS: Partial<Record<AuthComponentModel, Record<string, string>>> = {
+  user: {
+    id: "id",
+    email: "email",
+    createdAt: "createdAt",
+  },
+  session: {
+    id: "id",
+    token: "token",
+    userId: "userId",
+    expiresAt: "expiresAt",
+  },
+  account: {
+    id: "id",
+    userId: "userId",
+  },
+  verification: {
+    id: "id",
+    identifier: "identifier",
+    expiresAt: "expiresAt",
+  },
+  rateLimit: {
+    key: "key",
+  },
+  twoFactor: {
+    userId: "userId",
+  },
+  oauthApplication: {
+    clientId: "clientId",
+    userId: "userId",
+  },
+  oauthAccessToken: {
+    accessToken: "accessToken",
+    refreshToken: "refreshToken",
+    clientId: "clientId",
+    userId: "userId",
+  },
+  oauthConsent: {
+    userId: "userId",
+  },
+};
+
+function isAndOnly(where: ReadonlyArray<WhereClause>) {
+  return where.every((clause) => clause.connector === undefined || clause.connector === "AND");
+}
+
+function getIndexedFieldMap(model: string) {
+  return INDEXED_FIELDS[model as AuthComponentModel] ?? null;
+}
+
+function getEqClause(where: ReadonlyArray<WhereClause>, field: string) {
+  return where.find(
+    (clause) => String(clause.field) === field && String(clause.operator ?? "eq") === "eq"
+  );
+}
+
+function getRangeClause(where: ReadonlyArray<WhereClause>, field: string) {
+  return where.find((clause) => {
+    if (String(clause.field) !== field) {
+      return false;
+    }
+    const operator = String(clause.operator ?? "eq");
+    return operator === "gt" || operator === "gte" || operator === "lt" || operator === "lte";
+  });
+}
+
+function buildIndexedReader(args: {
+  db: ConvexDbLike;
+  model: string;
+  where: ReadonlyArray<WhereClause>;
+  sortBy?: { field: string; direction: Direction };
+}) {
+  const { db, model, where, sortBy } = args;
+  if (!where.length || !isAndOnly(where)) {
+    return null;
+  }
+
+  const indexMap = getIndexedFieldMap(model);
+  if (!indexMap) {
+    return null;
+  }
+
+  const userIdClause = getEqClause(where, "userId");
+  const expiresAtRangeClause = getRangeClause(where, "expiresAt");
+  if (model === "session" && userIdClause && expiresAtRangeClause) {
+    let reader = db.query(model).withIndex("userId_expiresAt", (query) => {
+      let next = query.eq("userId", userIdClause.value);
+      const rangeValue = expiresAtRangeClause.value;
+      if (typeof rangeValue !== "number") {
+        return next;
+      }
+      switch (String(expiresAtRangeClause.operator)) {
+        case "gt":
+          return next.gt("expiresAt", rangeValue);
+        case "gte":
+          return next.gte("expiresAt", rangeValue);
+        case "lt":
+          return next.lt("expiresAt", rangeValue);
+        case "lte":
+          return next.lte("expiresAt", rangeValue);
+        default:
+          return next;
+      }
+    });
+    if (sortBy) {
+      reader = reader.order(sortBy.direction);
+    }
+    return reader;
+  }
+
+  for (const clause of where) {
+    const field = String(clause.field);
+    const operator = String(clause.operator ?? "eq");
+    const indexName = indexMap[field];
+    if (!indexName) {
+      continue;
+    }
+
+    let reader = db.query(model).withIndex(indexName, (query) => {
+      switch (operator) {
+        case "eq":
+          return query.eq(field, clause.value);
+        case "gt":
+          return typeof clause.value === "number" ? query.gt(field, clause.value) : query;
+        case "gte":
+          return typeof clause.value === "number" ? query.gte(field, clause.value) : query;
+        case "lt":
+          return typeof clause.value === "number" ? query.lt(field, clause.value) : query;
+        case "lte":
+          return typeof clause.value === "number" ? query.lte(field, clause.value) : query;
+        default:
+          return query;
+      }
+    });
+    if (sortBy) {
+      reader = reader.order(sortBy.direction);
+    }
+    return reader;
+  }
+
+  return null;
+}
+
 function matchesWhere(
   record: ConvexDbRecord,
-  where: ReadonlyArray<Record<string, unknown>>
+  where: ReadonlyArray<WhereClause>
 ) {
   if (!where.length) {
     return true;
@@ -165,6 +310,19 @@ async function queryAll(db: ConvexDbLike, model: string) {
   return db.query(model).collect();
 }
 
+async function queryByWhere(args: {
+  db: ConvexDbLike;
+  model: string;
+  where: ReadonlyArray<WhereClause>;
+  sortBy?: { field: string; direction: Direction };
+}) {
+  const reader = buildIndexedReader(args);
+  if (reader) {
+    return reader.collect();
+  }
+  return queryAll(args.db, args.model);
+}
+
 async function findOneByField(
   db: ConvexDbLike,
   table: string,
@@ -182,6 +340,10 @@ async function findSessionByToken(db: ConvexDbLike, token: string) {
   return findOneByField(db, "session", "token", "token", token);
 }
 
+async function findSessionById(db: ConvexDbLike, sessionId: string) {
+  return findOneByField(db, "session", "id", "id", sessionId);
+}
+
 async function findUserById(db: ConvexDbLike, userId: string) {
   return findOneByField(db, "user", "id", "id", userId);
 }
@@ -189,6 +351,24 @@ async function findUserById(db: ConvexDbLike, userId: string) {
 export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
   return {
     hotPath: {
+      async getSessionByToken({ token }) {
+        const session = (await findSessionByToken(db, token)) as
+          | (ConvexDbRecord & AuthComponentSession)
+          | null;
+        return resolveSession({
+          session: toPublicRecord(session) as AuthComponentSession | null,
+          now: Date.now(),
+        });
+      },
+      async getSessionBySessionId({ sessionId }) {
+        const session = (await findSessionById(db, sessionId)) as
+          | (ConvexDbRecord & AuthComponentSession)
+          | null;
+        return resolveSession({
+          session: toPublicRecord(session) as AuthComponentSession | null,
+          now: Date.now(),
+        });
+      },
       async getSessionWithUserByToken({ token, now }) {
         const session = (await findSessionByToken(db, token)) as
           | (ConvexDbRecord & AuthComponentSession)
@@ -206,13 +386,7 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
         });
       },
       async getSessionWithUserBySessionId({ sessionId, now }) {
-        const session = (await findOneByField(
-          db,
-          "session",
-          "id",
-          "id",
-          sessionId
-        )) as
+        const session = (await findSessionById(db, sessionId)) as
           | (ConvexDbRecord & AuthComponentSession)
           | null;
         if (!session) {
@@ -253,12 +427,21 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
         >;
       },
       async findOne(model, where) {
-        const records = await queryAll(db, model);
+        const records = await queryByWhere({
+          db,
+          model,
+          where: where as ReadonlyArray<WhereClause>,
+        });
         const found = records.find((record) => matchesWhere(record, where)) ?? null;
         return toPublicRecord(found) as AuthComponentRecordByModel<typeof model> | null;
       },
       async findMany(model, where, options) {
-        const records = await queryAll(db, model);
+        const records = await queryByWhere({
+          db,
+          model,
+          where: where as ReadonlyArray<WhereClause>,
+          sortBy: options.sortBy as { field: string; direction: Direction } | undefined,
+        });
         const filtered = records.filter((record) => matchesWhere(record, where));
         const sorted = applySort(filtered, options.sortBy);
         const offset = options.offset ?? 0;
@@ -272,11 +455,19 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
           );
       },
       async count(model, where) {
-        const records = await queryAll(db, model);
+        const records = await queryByWhere({
+          db,
+          model,
+          where: where as ReadonlyArray<WhereClause>,
+        });
         return records.filter((record) => matchesWhere(record, where)).length;
       },
       async updateOne({ model, where, update }) {
-        const records = await queryAll(db, model);
+        const records = await queryByWhere({
+          db,
+          model,
+          where: where as ReadonlyArray<WhereClause>,
+        });
         const found = records.find((record) => matchesWhere(record, where)) ?? null;
         if (!found) {
           return null;
@@ -286,7 +477,11 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
         return toPublicRecord(updated) as AuthComponentRecordByModel<typeof model> | null;
       },
       async updateMany({ model, where, update }) {
-        const records = await queryAll(db, model);
+        const records = await queryByWhere({
+          db,
+          model,
+          where: where as ReadonlyArray<WhereClause>,
+        });
         const matches = records.filter((record) => matchesWhere(record, where));
         for (const record of matches) {
           await db.patch(record._id, update);
@@ -294,14 +489,22 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
         return matches.length;
       },
       async deleteOne({ model, where }) {
-        const records = await queryAll(db, model);
+        const records = await queryByWhere({
+          db,
+          model,
+          where: where as ReadonlyArray<WhereClause>,
+        });
         const found = records.find((record) => matchesWhere(record, where)) ?? null;
         if (found) {
           await db.delete(found._id);
         }
       },
       async deleteMany({ model, where }) {
-        const records = await queryAll(db, model);
+        const records = await queryByWhere({
+          db,
+          model,
+          where: where as ReadonlyArray<WhereClause>,
+        });
         const matches = records.filter((record) => matchesWhere(record, where));
         for (const record of matches) {
           await db.delete(record._id);
