@@ -31,6 +31,7 @@ describe("createComponentBindings", () => {
   it("forwards session-only hot-path calls to the component runtime", async () => {
     const api = createInMemoryAuthComponent({
       initialState: {
+        user: [{ id: "user-1", email: "user@example.com" }],
         session: [
           {
             id: "session-1",

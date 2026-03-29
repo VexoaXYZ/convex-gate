@@ -175,6 +175,22 @@ describe("createConvexAuthComponent", () => {
     expect(result).not.toHaveProperty("user");
   });
 
+  it("returns null for expired sessions on the session-only hot path", async () => {
+    const db = createFakeDb({
+      user: [{ _id: "user-1", id: "user-1", email: "user@example.com", emailVerified: true, createdAt: 1, updatedAt: 1 }],
+      session: [{ _id: "session-1", id: "session-1", userId: "user-1", token: "token-1", expiresAt: Date.now() - 60_000 }],
+      account: [],
+      verification: [],
+    });
+    const api = createConvexAuthComponent(db);
+
+    const result = await api.hotPath.getSessionByToken({
+      token: "token-1",
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("uses the user id index for generic user lookups", async () => {
     const usedIndexes: string[] = [];
     const db = createFakeDb(
@@ -235,6 +251,35 @@ describe("createConvexAuthComponent", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe("session-1");
     expect(usedIndexes).toContain("userId_expiresAt");
+  });
+
+  it("does not rewrite _id predicates to the id index", async () => {
+    const usedIndexes: string[] = [];
+    const db = createFakeDb(
+      {
+        user: [
+          { _id: "convex-doc-1", id: "business-id-1", email: "one@example.com", emailVerified: true, createdAt: 1, updatedAt: 1 },
+          { _id: "convex-doc-2", id: "convex-doc-1", email: "two@example.com", emailVerified: true, createdAt: 1, updatedAt: 1 },
+        ],
+        session: [],
+        account: [],
+        verification: [],
+      },
+      {
+        onWithIndex(indexName) {
+          usedIndexes.push(indexName);
+        },
+      }
+    );
+    const api = createConvexAuthComponent(db);
+
+    const result = await api.crud.findOne("user", [
+      { field: "_id", value: "convex-doc-1", operator: "eq", connector: "AND" },
+    ]);
+
+    expect(result?._id).toBe("convex-doc-1");
+    expect(result?.id).toBe("business-id-1");
+    expect(usedIndexes).not.toContain("id");
   });
 
   it("invalidates all sessions for a user", async () => {

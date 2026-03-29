@@ -84,10 +84,6 @@ const INDEXED_FIELDS: Partial<Record<AuthComponentModel, Record<string, string>>
   },
 };
 
-function normalizeField(field: string) {
-  return field === "_id" ? "id" : field;
-}
-
 function isAndOnly(where: ReadonlyArray<WhereClause>) {
   return where.every((clause) => clause.connector === undefined || clause.connector === "AND");
 }
@@ -98,15 +94,13 @@ function getIndexedFieldMap(model: string) {
 
 function getEqClause(where: ReadonlyArray<WhereClause>, field: string) {
   return where.find(
-    (clause) =>
-      normalizeField(String(clause.field)) === field &&
-      String(clause.operator ?? "eq") === "eq"
+    (clause) => String(clause.field) === field && String(clause.operator ?? "eq") === "eq"
   );
 }
 
 function getRangeClause(where: ReadonlyArray<WhereClause>, field: string) {
   return where.find((clause) => {
-    if (normalizeField(String(clause.field)) !== field) {
+    if (String(clause.field) !== field) {
       return false;
     }
     const operator = String(clause.operator ?? "eq");
@@ -159,7 +153,7 @@ function buildIndexedReader(args: {
   }
 
   for (const clause of where) {
-    const field = normalizeField(String(clause.field));
+    const field = String(clause.field);
     const operator = String(clause.operator ?? "eq");
     const indexName = indexMap[field];
     if (!indexName) {
@@ -361,13 +355,33 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
         const session = (await findSessionByToken(db, token)) as
           | (ConvexDbRecord & AuthComponentSession)
           | null;
-        return toPublicRecord(session) as AuthComponentSession | null;
+        if (!session) {
+          return null;
+        }
+        const user = (await findUserById(db, session.userId)) as
+          | (ConvexDbRecord & AuthComponentUser)
+          | null;
+        return resolveSessionWithUser({
+          session: toPublicRecord(session) as AuthComponentSession | null,
+          user: toPublicRecord(user) as AuthComponentUser | null,
+          now: Date.now(),
+        }).session;
       },
       async getSessionBySessionId({ sessionId }) {
         const session = (await findSessionById(db, sessionId)) as
           | (ConvexDbRecord & AuthComponentSession)
           | null;
-        return toPublicRecord(session) as AuthComponentSession | null;
+        if (!session) {
+          return null;
+        }
+        const user = (await findUserById(db, session.userId)) as
+          | (ConvexDbRecord & AuthComponentUser)
+          | null;
+        return resolveSessionWithUser({
+          session: toPublicRecord(session) as AuthComponentSession | null,
+          user: toPublicRecord(user) as AuthComponentUser | null,
+          now: Date.now(),
+        }).session;
       },
       async getSessionWithUserByToken({ token, now }) {
         const session = (await findSessionByToken(db, token)) as

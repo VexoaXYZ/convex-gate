@@ -83,6 +83,29 @@ describe("createComponentStore", () => {
     });
   });
 
+  it("returns null for an expired session even without selecting user", async () => {
+    const { api, session } = createApi();
+    const expiredSession = {
+      ...session,
+      expiresAt: Date.now() - 1_000,
+    };
+    api.hotPath.getSessionByToken = vi.fn(async () => null);
+    api.hotPath.getSessionWithUserByToken = vi.fn(async () => ({
+      session: null,
+      user: null,
+    }));
+    const store = createComponentStore(api);
+
+    const result = await store.findOne({
+      model: "session",
+      where: [{ field: "token", value: "token-1", operator: "eq", connector: "AND" }],
+    });
+
+    expect(api.hotPath.getSessionByToken).toHaveBeenCalledTimes(1);
+    expect(result).toBeNull();
+    void expiredSession;
+  });
+
   it("uses the session+user hot path when the caller selects user", async () => {
     const { api } = createApi();
     const store = createComponentStore(api);

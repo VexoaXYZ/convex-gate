@@ -315,10 +315,22 @@ export function createInMemoryAuthComponent(
   return {
     hotPath: {
       async getSessionByToken({ token }) {
-        return findSessionByToken(state, token);
+        return (
+          await findSessionWithUser({
+            state,
+            session: findSessionByToken(state, token),
+            now: Date.now(),
+          })
+        ).session;
       },
       async getSessionBySessionId({ sessionId }) {
-        return state.session.get(sessionId) ?? null;
+        return (
+          await findSessionWithUser({
+            state,
+            session: state.session.get(sessionId) ?? null,
+            now: Date.now(),
+          })
+        ).session;
       },
       async getSessionWithUserByToken({ token, now }) {
         return findSessionWithUser({
