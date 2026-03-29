@@ -5,7 +5,7 @@ import type {
   AuthComponentSession,
   AuthComponentUser,
 } from "./index.js";
-import { resolveSessionWithUser } from "./hotPath.js";
+import { resolveSession, resolveSessionWithUser } from "./hotPath.js";
 
 type Direction = "asc" | "desc";
 
@@ -355,33 +355,19 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
         const session = (await findSessionByToken(db, token)) as
           | (ConvexDbRecord & AuthComponentSession)
           | null;
-        if (!session) {
-          return null;
-        }
-        const user = (await findUserById(db, session.userId)) as
-          | (ConvexDbRecord & AuthComponentUser)
-          | null;
-        return resolveSessionWithUser({
+        return resolveSession({
           session: toPublicRecord(session) as AuthComponentSession | null,
-          user: toPublicRecord(user) as AuthComponentUser | null,
           now: Date.now(),
-        }).session;
+        });
       },
       async getSessionBySessionId({ sessionId }) {
         const session = (await findSessionById(db, sessionId)) as
           | (ConvexDbRecord & AuthComponentSession)
           | null;
-        if (!session) {
-          return null;
-        }
-        const user = (await findUserById(db, session.userId)) as
-          | (ConvexDbRecord & AuthComponentUser)
-          | null;
-        return resolveSessionWithUser({
+        return resolveSession({
           session: toPublicRecord(session) as AuthComponentSession | null,
-          user: toPublicRecord(user) as AuthComponentUser | null,
           now: Date.now(),
-        }).session;
+        });
       },
       async getSessionWithUserByToken({ token, now }) {
         const session = (await findSessionByToken(db, token)) as

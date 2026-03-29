@@ -159,11 +159,16 @@ describe("createConvexAuthComponent", () => {
   });
 
   it("resolves a session by id without loading the user", async () => {
+    const usedIndexes: string[] = [];
     const db = createFakeDb({
       user: [{ _id: "user-1", id: "user-1", email: "user@example.com", emailVerified: true, createdAt: 1, updatedAt: 1 }],
       session: [{ _id: "session-1", id: "session-1", userId: "user-1", token: "token-1", expiresAt: Date.now() + 60_000 }],
       account: [],
       verification: [],
+    }, {
+      onWithIndex(indexName) {
+        usedIndexes.push(indexName);
+      },
     });
     const api = createConvexAuthComponent(db);
 
@@ -173,14 +178,20 @@ describe("createConvexAuthComponent", () => {
 
     expect(result?.id).toBe("session-1");
     expect(result).not.toHaveProperty("user");
+    expect(usedIndexes).toEqual(["id"]);
   });
 
   it("returns null for expired sessions on the session-only hot path", async () => {
+    const usedIndexes: string[] = [];
     const db = createFakeDb({
       user: [{ _id: "user-1", id: "user-1", email: "user@example.com", emailVerified: true, createdAt: 1, updatedAt: 1 }],
       session: [{ _id: "session-1", id: "session-1", userId: "user-1", token: "token-1", expiresAt: Date.now() - 60_000 }],
       account: [],
       verification: [],
+    }, {
+      onWithIndex(indexName) {
+        usedIndexes.push(indexName);
+      },
     });
     const api = createConvexAuthComponent(db);
 
@@ -189,6 +200,7 @@ describe("createConvexAuthComponent", () => {
     });
 
     expect(result).toBeNull();
+    expect(usedIndexes).toEqual(["token"]);
   });
 
   it("uses the user id index for generic user lookups", async () => {

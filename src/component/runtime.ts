@@ -11,7 +11,7 @@ import type {
   GetSessionWithUserResult,
 } from "./index.js";
 import { AUTH_COMPONENT_MODELS } from "./models.js";
-import { resolveSessionWithUser } from "./hotPath.js";
+import { resolveSession, resolveSessionWithUser } from "./hotPath.js";
 
 type AnyRecord = Record<string, unknown>;
 type SortDirection = "asc" | "desc";
@@ -315,22 +315,16 @@ export function createInMemoryAuthComponent(
   return {
     hotPath: {
       async getSessionByToken({ token }) {
-        return (
-          await findSessionWithUser({
-            state,
-            session: findSessionByToken(state, token),
-            now: Date.now(),
-          })
-        ).session;
+        return resolveSession({
+          session: findSessionByToken(state, token),
+          now: Date.now(),
+        });
       },
       async getSessionBySessionId({ sessionId }) {
-        return (
-          await findSessionWithUser({
-            state,
-            session: state.session.get(sessionId) ?? null,
-            now: Date.now(),
-          })
-        ).session;
+        return resolveSession({
+          session: state.session.get(sessionId) ?? null,
+          now: Date.now(),
+        });
       },
       async getSessionWithUserByToken({ token, now }) {
         return findSessionWithUser({

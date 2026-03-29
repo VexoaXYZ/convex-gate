@@ -11,6 +11,23 @@ export function isSessionActive(
   return Boolean(session && session.expiresAt > now);
 }
 
+export function resolveSession(args: {
+  session: AuthComponentSession | null;
+  now: number;
+}): AuthComponentSession | null {
+  const { session, now } = args;
+
+  if (!session) {
+    return null;
+  }
+
+  if (!isSessionActive(session, now)) {
+    return null;
+  }
+
+  return session;
+}
+
 export function resolveSessionWithUser(args: {
   session: AuthComponentSession | null;
   user: AuthComponentUser | null;
