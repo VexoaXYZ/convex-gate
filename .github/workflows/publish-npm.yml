@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - dev
-    paths:
-      - package.json
-      - package-lock.json
   release:
     types: [published]
   workflow_dispatch:
