@@ -440,7 +440,11 @@ export function createConvexAuthComponent(db: ConvexDbLike): AuthComponentApi {
           db,
           model,
           where: where as ReadonlyArray<WhereClause>,
-          sortBy: options.sortBy as { field: string; direction: Direction } | undefined,
+          ...(options.sortBy
+            ? {
+                sortBy: options.sortBy as { field: string; direction: Direction },
+              }
+            : {}),
         });
         const filtered = records.filter((record) => matchesWhere(record, where));
         const sorted = applySort(filtered, options.sortBy);
