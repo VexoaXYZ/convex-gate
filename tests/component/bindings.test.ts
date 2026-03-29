@@ -28,6 +28,28 @@ describe("createComponentBindings", () => {
     expect(result.user?.id).toBe("user-1");
   });
 
+  it("forwards session-only hot-path calls to the component runtime", async () => {
+    const api = createInMemoryAuthComponent({
+      initialState: {
+        session: [
+          {
+            id: "session-1",
+            userId: "user-1",
+            token: "token-1",
+            expiresAt: Date.now() + 60_000,
+          },
+        ],
+      },
+    });
+    const bindings = createComponentBindings(api);
+
+    const result = await bindings.hotPath.getSessionBySessionId({
+      sessionId: "session-1",
+    });
+
+    expect(result?.id).toBe("session-1");
+  });
+
   it("forwards CRUD calls to the component runtime", async () => {
     const api = createInMemoryAuthComponent();
     const bindings = createComponentBindings(api);

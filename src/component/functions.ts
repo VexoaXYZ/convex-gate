@@ -11,6 +11,8 @@ import {
   crudFindOneArgsValidator,
   crudUpdateManyArgsValidator,
   crudUpdateOneArgsValidator,
+  getSessionBySessionIdArgsValidator,
+  getSessionByTokenArgsValidator,
   getSessionWithUserBySessionIdArgsValidator,
   getSessionWithUserByTokenArgsValidator,
   invalidateSessionArgsValidator,
@@ -42,6 +44,18 @@ function getApi(ctx: DbCtx) {
 export function createComponentFunctions() {
   return {
     hotPath: {
+      getSessionByToken: queryGeneric({
+        args: getSessionByTokenArgsValidator,
+        handler: async (ctx: GenericQueryCtx<GenericDataModel>, args) => {
+          return getApi(ctx as unknown as DbCtx).hotPath.getSessionByToken(args);
+        },
+      }),
+      getSessionBySessionId: queryGeneric({
+        args: getSessionBySessionIdArgsValidator,
+        handler: async (ctx: GenericQueryCtx<GenericDataModel>, args) => {
+          return getApi(ctx as unknown as DbCtx).hotPath.getSessionBySessionId(args);
+        },
+      }),
       getSessionWithUserByToken: queryGeneric({
         args: getSessionWithUserByTokenArgsValidator,
         handler: async (ctx: GenericQueryCtx<GenericDataModel>, args) => {

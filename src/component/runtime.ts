@@ -209,6 +209,18 @@ function findSessionWithUser(args: {
   });
 }
 
+function findSessionByToken(
+  state: InMemoryAuthComponentState,
+  token: string
+): AuthComponentSession | null {
+  for (const session of state.session.values()) {
+    if (session.token === token) {
+      return session;
+    }
+  }
+  return null;
+}
+
 export function createInMemoryAuthComponent(
   options: CreateInMemoryAuthComponentOptions = {}
 ): AuthComponentApi {
@@ -302,24 +314,23 @@ export function createInMemoryAuthComponent(
 
   return {
     hotPath: {
-      async getSessionWithUserByToken({ token, now }) {
-        for (const session of state.session.values()) {
-          if (session.token !== token) {
-            continue;
-          }
-          return findSessionWithUser({
-            state,
-            session,
-            now,
-          });
-        }
-        return { session: null, user: null };
+      async getSessionByToken({ token }) {
+        return findSessionByToken(state, token);
       },
-      async getSessionWithUserBySessionId({ sessionId, now }) {
-        const session = state.session.get(sessionId) ?? null;
+      async getSessionBySessionId({ sessionId }) {
+        return state.session.get(sessionId) ?? null;
+      },
+      async getSessionWithUserByToken({ token, now }) {
         return findSessionWithUser({
           state,
-          session,
+          session: findSessionByToken(state, token),
+          now,
+        });
+      },
+      async getSessionWithUserBySessionId({ sessionId, now }) {
+        return findSessionWithUser({
+          state,
+          session: state.session.get(sessionId) ?? null,
           now,
         });
       },
