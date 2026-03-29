@@ -50,6 +50,12 @@ export interface GetSessionWithUserResult {
 }
 
 export interface AuthComponentHotPathApi {
+  getSessionByToken(args: {
+    token: string;
+  }): Promise<AuthComponentSession | null>;
+  getSessionBySessionId(args: {
+    sessionId: string;
+  }): Promise<AuthComponentSession | null>;
   getSessionWithUserByToken(args: {
     token: string;
     now: number;

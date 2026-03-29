@@ -74,6 +74,10 @@ function isSessionById(where: CleanedWhere[] | undefined) {
   return typeof idClause?.value === "string" ? idClause.value : null;
 }
 
+function wantsSessionUser(select?: string[]) {
+  return select?.includes("user") ?? false;
+}
+
 function materializeSessionWithUser(result: GetSessionWithUserResult) {
   if (!result.session) {
     return null;
@@ -94,20 +98,28 @@ export function createComponentStore(api: AuthComponentApi): ConvexGateStore {
       if (isSessionModel(model)) {
         const token = isSessionByToken(where);
         if (token) {
-          const result = await api.hotPath.getSessionWithUserByToken({
-            token,
-            now: Date.now(),
-          });
-          return pickFields(materializeSessionWithUser(result), select);
+          if (wantsSessionUser(select)) {
+            const result = await api.hotPath.getSessionWithUserByToken({
+              token,
+              now: Date.now(),
+            });
+            return pickFields(materializeSessionWithUser(result), select);
+          }
+          const session = await api.hotPath.getSessionByToken({ token });
+          return pickFields(session as ConvexGateStoreRecord | null, select);
         }
 
         const sessionId = isSessionById(where);
         if (sessionId) {
-          const result = await api.hotPath.getSessionWithUserBySessionId({
-            sessionId,
-            now: Date.now(),
-          });
-          return pickFields(materializeSessionWithUser(result), select);
+          if (wantsSessionUser(select)) {
+            const result = await api.hotPath.getSessionWithUserBySessionId({
+              sessionId,
+              now: Date.now(),
+            });
+            return pickFields(materializeSessionWithUser(result), select);
+          }
+          const session = await api.hotPath.getSessionBySessionId({ sessionId });
+          return pickFields(session as ConvexGateStoreRecord | null, select);
         }
       }
 

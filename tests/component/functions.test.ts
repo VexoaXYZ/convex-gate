@@ -6,6 +6,8 @@ describe("createComponentFunctions", () => {
     const functions = createComponentFunctions();
 
     expect(Object.keys(functions.hotPath)).toEqual([
+      "getSessionByToken",
+      "getSessionBySessionId",
       "getSessionWithUserByToken",
       "getSessionWithUserBySessionId",
       "invalidateSession",

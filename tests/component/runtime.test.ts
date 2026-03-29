@@ -32,6 +32,37 @@ describe("createInMemoryAuthComponent", () => {
     expect(result.user?.id).toBe("user-1");
   });
 
+  it("returns a session on the session-only hot path without a user payload", async () => {
+    const component = createInMemoryAuthComponent({
+      initialState: {
+        user: [
+          {
+            id: "user-1",
+            email: "user@example.com",
+          },
+        ],
+        session: [
+          {
+            id: "session-1",
+            userId: "user-1",
+            token: "token-1",
+            expiresAt: Date.now() + 60_000,
+          },
+        ],
+      },
+    });
+
+    const result = await component.hotPath.getSessionByToken({
+      token: "token-1",
+    });
+
+    expect(result).toMatchObject({
+      id: "session-1",
+      token: "token-1",
+    });
+    expect(result).not.toHaveProperty("user");
+  });
+
   it("invalidates all sessions for a user", async () => {
     const component = createInMemoryAuthComponent({
       initialState: {
@@ -90,6 +121,7 @@ describe("createInMemoryAuthComponent", () => {
       id: "session-1",
       token: "token-1",
     });
+    expect(session).not.toHaveProperty("user");
 
     await store.create({
       model: "verification",

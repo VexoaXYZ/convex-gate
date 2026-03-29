@@ -6,6 +6,18 @@ import type { AuthComponentApi } from "../../src/component/index.js";
 function createComponent(): AuthComponentApi {
   return {
     hotPath: {
+      getSessionByToken: vi.fn(async () => ({
+        id: "session-1",
+        userId: "user-1",
+        token: "token-1",
+        expiresAt: Date.now() + 60_000,
+      })),
+      getSessionBySessionId: vi.fn(async () => ({
+        id: "session-1",
+        userId: "user-1",
+        token: "token-1",
+        expiresAt: Date.now() + 60_000,
+      })),
       getSessionWithUserByToken: vi.fn(async () => ({
         session: {
           id: "session-1",
@@ -58,7 +70,8 @@ describe("createComponentBackedAdapter", () => {
       where: [{ field: "token", value: "token-1" }],
     });
 
-    expect(component.hotPath.getSessionWithUserByToken).toHaveBeenCalledTimes(1);
+    expect(component.hotPath.getSessionByToken).toHaveBeenCalledTimes(1);
+    expect(component.hotPath.getSessionWithUserByToken).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       id: "session-1",
       token: "token-1",
