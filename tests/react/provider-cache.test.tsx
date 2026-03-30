@@ -387,7 +387,7 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
     expect(authClient.crossDomain.oneTimeToken.verify).toHaveBeenCalledWith({
       token: "test-ott",
     });
-    expect(authClient.updateSession).toHaveBeenCalledTimes(1);
+    expect(authClient.updateSession).toHaveBeenCalled();
     expect(window.location.href).toBe("http://localhost:3000/app");
   });
 });

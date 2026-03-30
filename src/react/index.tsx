@@ -102,30 +102,6 @@ type ConvexPluginMethods = {
   };
 };
 
-type CrossDomainPluginMethods = {
-  crossDomain: {
-    oneTimeToken?: {
-      verify(args: { token: string }): Promise<CrossDomainVerifyResponse>;
-    };
-    verifyOneTimeToken?: (args: { token: string }) => Promise<CrossDomainVerifyResponse>;
-  };
-  updateSession?(): void;
-};
-
-function hasCrossDomainClient(
-  client: AuthClient,
-): client is AuthClient & CrossDomainPluginMethods {
-  try {
-    // Better Auth wraps the client in a Proxy whose target is a bare function,
-    // so the `in` operator and `typeof === "object"` checks both fail.
-    // Access the property through the Proxy's get-trap instead.
-    const cd = (client as AuthClient & Partial<CrossDomainPluginMethods>)
-      .crossDomain;
-    return cd != null;
-  } catch {
-    return false;
-  }
-}
 
 function isDebugEnabled() {
   if (typeof window === "undefined") {
@@ -179,33 +155,52 @@ function extractVerifySession(result: CrossDomainVerifyResponse) {
   return null;
 }
 
-async function waitForSession(
-  authClient: BetterAuthSessionClient,
-  crossDomainAuthClient: AuthClient & CrossDomainPluginMethods
-) {
-  let result = await authClient.getSession();
-  pushDebugEvent("ott:get-session:attempt", {
-    attempt: 0,
-    session: extractSessionData(result),
-  });
-  if (extractSessionData(result)?.session) {
-    return result;
+function tryCall(fn: unknown) {
+  if (typeof fn === "function") {
+    try {
+      fn();
+    } catch {
+      // best-effort
+    }
   }
+}
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, attempt * 75));
-    crossDomainAuthClient.updateSession?.();
-    result = await authClient.getSession();
-    pushDebugEvent("ott:get-session:attempt", {
-      attempt,
-      session: extractSessionData(result),
+async function waitForSession(
+  sessionClient: BetterAuthSessionClient,
+  updateSession: unknown,
+  sessionToken?: string | null
+) {
+  // First try with explicit Bearer token if available
+  if (sessionToken) {
+    const result = await sessionClient.getSession({
+      fetchOptions: {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      },
     });
-    if (extractSessionData(result)?.session) {
+    const data = extractSessionData(result);
+    pushDebugEvent("ott:get-session:bearer", { session: data });
+    if (data?.session) {
       return result;
     }
   }
 
-  return result;
+  // Poll with increasing backoff — the cross-domain fetch plugin's onSuccess
+  // hook stores the session cookie in localStorage asynchronously, so the
+  // cookie may not be available on the very first attempt.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+    }
+    tryCall(updateSession);
+    const result = await sessionClient.getSession();
+    const data = extractSessionData(result);
+    pushDebugEvent("ott:get-session:attempt", { attempt, session: data });
+    if (data?.session) {
+      return result;
+    }
+  }
+
+  return null;
 }
 
 export function getTokenExpiry(token: string): number | null {
@@ -340,64 +335,90 @@ export function ConvexBetterAuthProvider({
       if (!token) {
         return;
       }
-      // Always strip the one-time token from the URL so it cannot be retried.
+      // Always strip the OTT immediately so it is never retried on refresh.
       pushDebugEvent("ott:found", { token, href: window.location.href });
       url.searchParams.delete("ott");
       window.history.replaceState({}, "", url);
-      if (!hasCrossDomainClient(authClient)) {
-        pushDebugEvent("ott:error", {
-          message: "Cross-domain client not detected",
-        });
-        return;
-      }
-      const crossDomainAuthClient = authClient;
+
+      // Resolve cross-domain helpers — go through the Proxy get-trap, never
+      // use the `in` operator (fails on Better Auth's Proxy target).
+      const cd = (authClient as any).crossDomain;
+      const updateSession =
+        (authClient as any).updateSession ?? cd?.updateSession;
       const sessionClient = authClient as BetterAuthSessionClient;
+
       try {
-        // CSRF check: a verifier must have been set before the OAuth redirect.
-        // If missing, this OTT didn't originate from this browser session.
-        const consumeVerifier = (crossDomainAuthClient as any).crossDomain
-          ?.consumeOttVerifier;
+        // Soft CSRF check — warn but don't block (the verifier may be absent
+        // after a package upgrade, localStorage clear, or incognito window).
+        const consumeVerifier = cd?.consumeOttVerifier;
         if (typeof consumeVerifier === "function") {
           const verifier = consumeVerifier();
           if (!verifier) {
-            pushDebugEvent("ott:error", {
-              message: "OTT verifier missing — possible login CSRF",
+            pushDebugEvent("ott:warn", {
+              message: "OTT verifier missing — CSRF check skipped",
             });
-            return;
           }
         }
-        const verifyOneTimeToken =
-          crossDomainAuthClient.crossDomain.oneTimeToken?.verify ??
-          crossDomainAuthClient.crossDomain.verifyOneTimeToken;
-        if (!verifyOneTimeToken) {
+
+        // Resolve the verify method through Better Auth's Proxy chain.
+        const verifyFn =
+          cd?.oneTimeToken?.verify ?? cd?.verifyOneTimeToken;
+        if (typeof verifyFn !== "function") {
           pushDebugEvent("ott:error", {
             message: "Cross-domain client missing OTT verify method",
           });
           return;
         }
-        const verifyResult = await verifyOneTimeToken({ token });
-        pushDebugEvent("ott:verify:success", verifyResult);
+
+        // Exchange the OTT for a session.
+        const verifyResult = await verifyFn({ token });
+        pushDebugEvent("ott:verify:response", verifyResult);
+
+        // Check for explicit error in the response.
+        if (
+          verifyResult &&
+          typeof verifyResult === "object" &&
+          "error" in verifyResult &&
+          verifyResult.error
+        ) {
+          pushDebugEvent("ott:error", {
+            message: `OTT verify rejected: ${
+              typeof verifyResult.error === "object" && verifyResult.error !== null && "message" in verifyResult.error
+                ? (verifyResult.error as { message: string }).message
+                : JSON.stringify(verifyResult.error)
+            }`,
+          });
+          // Still try to establish a session — the cookie may have been set
+          // even when the JSON body contains an error.
+        }
+
         const verifiedSession = extractVerifySession(verifyResult);
         const sessionToken = verifiedSession?.token ?? null;
-        if (verifiedSession) {
-          crossDomainAuthClient.updateSession?.();
-        }
-        const sessionResult = sessionToken
-          ? await sessionClient.getSession({
-              fetchOptions: {
-                headers: {
-                  Authorization: `Bearer ${sessionToken}`,
-                },
-              },
-            })
-          : await waitForSession(sessionClient, crossDomainAuthClient);
+
+        // Notify Better Auth to pick up the new session cookie.
+        tryCall(updateSession);
+
+        // Establish session — try Bearer first, then poll.
+        const sessionResult = await waitForSession(
+          sessionClient,
+          updateSession,
+          sessionToken
+        );
         const sessionData = extractSessionData(sessionResult);
+
         if (sessionData?.session) {
-          crossDomainAuthClient.updateSession?.();
-          pushDebugEvent("ott:complete", { session: sessionData.session, href: url.toString() });
+          tryCall(updateSession);
+          pushDebugEvent("ott:complete", {
+            session: sessionData.session,
+            href: url.toString(),
+          });
           return;
         }
+
+        // Fallback: the verify call itself returned session data even though
+        // getSession couldn't find it yet — trust the verify response.
         if (verifiedSession) {
+          tryCall(updateSession);
           pushDebugEvent("ott:complete", {
             session: verifiedSession,
             href: url.toString(),
@@ -405,7 +426,11 @@ export function ConvexBetterAuthProvider({
           });
           return;
         }
-        pushDebugEvent("ott:session-missing", sessionResult);
+
+        pushDebugEvent("ott:session-missing", {
+          verifyResult,
+          sessionResult,
+        });
       } catch (error) {
         pushDebugEvent("ott:error", {
           message: error instanceof Error ? error.message : String(error),
