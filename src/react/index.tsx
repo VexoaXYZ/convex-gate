@@ -348,15 +348,16 @@ export function ConvexBetterAuthProvider({
       const sessionClient = authClient as BetterAuthSessionClient;
 
       try {
-        // Soft CSRF check — warn but don't block (the verifier may be absent
-        // after a package upgrade, localStorage clear, or incognito window).
+        // Fail closed when the client has cross-domain CSRF support but no
+        // verifier is available for this OTT exchange.
         const consumeVerifier = cd?.consumeOttVerifier;
         if (typeof consumeVerifier === "function") {
           const verifier = consumeVerifier();
           if (!verifier) {
-            pushDebugEvent("ott:warn", {
-              message: "OTT verifier missing — CSRF check skipped",
+            pushDebugEvent("ott:error", {
+              message: "OTT verifier missing; rejecting token exchange",
             });
+            return;
           }
         }
 

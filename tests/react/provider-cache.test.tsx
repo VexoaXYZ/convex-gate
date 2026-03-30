@@ -49,6 +49,7 @@ function createAuthClient(options?: {
   initialSession?: { session: { id: string } } | null;
   tokenSequence?: Array<string | null>;
   verifyOneTimeTokenResponse?: unknown;
+  ottVerifier?: string | null;
 }) {
   let session = options?.initialSession ?? { session: { id: "session-1" } };
   const tokenSequence = [...(options?.tokenSequence ?? [])];
@@ -69,6 +70,11 @@ function createAuthClient(options?: {
       };
     },
     crossDomain: {
+      consumeOttVerifier: vi.fn(() =>
+        options && "ottVerifier" in options
+          ? options.ottVerifier
+          : "test-ott-verifier"
+      ),
       oneTimeToken: {
         verify: vi.fn(async () => options?.verifyOneTimeTokenResponse ?? { data: session }),
       },
@@ -312,6 +318,35 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
     expect(lastCall?.[0]).toEqual({});
     expect(lastCall?.[1]).toBe("");
     expect(String(lastCall?.[2])).toBe("http://localhost:3000/app");
+  });
+
+  it("rejects ott redirects when the csrf verifier is missing", async () => {
+    const authClient = createAuthClient({
+      initialSession: null,
+      ottVerifier: null,
+    });
+
+    window.history.replaceState({}, "", "/app?ott=test-ott");
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ConvexBetterAuthProvider,
+          {
+            authClient: authClient as any,
+            client: {} as any,
+          },
+          React.createElement("div")
+        )
+      );
+      await flushPromises();
+    });
+
+    expect(authClient.crossDomain.consumeOttVerifier).toHaveBeenCalledTimes(1);
+    expect(authClient.crossDomain.oneTimeToken.verify).not.toHaveBeenCalled();
+    expect(authClient.getSession).not.toHaveBeenCalled();
+    expect(authClient.updateSession).not.toHaveBeenCalled();
+    expect(window.location.href).toBe("http://localhost:3000/app");
   });
 
   it("treats top-level verify session payloads as a successful ott completion", async () => {
