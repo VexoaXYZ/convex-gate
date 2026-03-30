@@ -57,6 +57,8 @@ const INDEXED_FIELDS: Partial<Record<AuthComponentModel, Record<string, string>>
   account: {
     id: "id",
     userId: "userId",
+    accountId: "accountId_providerId",
+    providerId: "providerId_userId",
   },
   verification: {
     id: "id",

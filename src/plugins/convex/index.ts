@@ -10,6 +10,12 @@ import { parseJwks } from "../../authConfig.js";
 
 export const JWT_COOKIE_NAME = "convex_jwt";
 
+type BetterAuthAfterHooks = NonNullable<
+  NonNullable<BetterAuthPlugin["hooks"]>["after"]
+>;
+type BetterAuthAfterHook = BetterAuthAfterHooks[number];
+type BetterAuthHookContext = Parameters<BetterAuthAfterHook["matcher"]>[0];
+
 interface CachedToken {
   token: string;
   expiresAt: number; // timestamp ms
@@ -24,6 +30,15 @@ type DefinedProperties<T extends object> = {
 function omitUndefined<T extends object>(value: T): DefinedProperties<T> {
   const entries = Object.entries(value).filter(([, entryValue]) => entryValue !== undefined);
   return Object.fromEntries(entries) as DefinedProperties<T>;
+}
+
+function normalizeAfterHooks<THook extends BetterAuthAfterHook>(
+  hooks: THook[]
+): BetterAuthAfterHooks {
+  return hooks.map((hook) => ({
+    ...hook,
+    matcher: (ctx: BetterAuthHookContext) => Boolean(hook.matcher(ctx)),
+  }));
 }
 
 function createTokenCache() {
@@ -75,9 +90,15 @@ function getJwksAlg(authProvider: AuthProvider) {
 }
 
 function parseAuthConfig(authConfig: AuthConfig, opts: { jwks?: string }) {
-  const provider = authConfig.providers.find(
+  const providers = authConfig.providers.filter(
     (candidate) => candidate.applicationID === "convex"
   );
+  if (providers.length > 1) {
+    throw new Error(
+      "Multiple auth providers with applicationID 'convex' detected. Please use only one."
+    );
+  }
+  const provider = providers[0];
   if (!provider) {
     throw new Error(
       "No Convex auth provider found. Add getAuthConfigProvider() to convex/auth.config.ts."
@@ -89,6 +110,11 @@ function parseAuthConfig(authConfig: AuthConfig, opts: { jwks?: string }) {
   const isDataUriJwks = provider.jwks?.startsWith("data:text/");
   if (isDataUriJwks && !opts.jwks) {
     throw new Error("Static JWKS detected in auth config, but no JWKS was passed to convex().");
+  }
+  if (!isDataUriJwks && opts.jwks) {
+    console.warn(
+      "Static JWKS provided to convex(), but auth config is not using a static JWKS. This adds an unnecessary verification fetch."
+    );
   }
   return provider;
 }
@@ -192,14 +218,81 @@ export function convex(opts: {
   // Cache TTL = half the JWT expiration, so tokens are always usable for at least half their lifetime
   const cacheTtl = Math.floor(jwtExpirationSeconds / 2);
   const tokenCache = createTokenCache();
+  const schema = {
+    user: {
+      fields: { userId: { type: "string", required: false, input: false } },
+    } as const,
+    ...jwt.schema,
+  };
 
   return {
     id: "convex",
-    schema: jwt.schema,
+    init: (ctx) => {
+      const { options } = ctx;
+      if (options.basePath !== "/api/auth" && !opts.options?.basePath) {
+        console.warn(
+          `Better Auth basePath set to ${options.basePath} but convex() was not given a basePath.`
+        );
+      }
+      if (opts.options?.basePath && options.basePath !== opts.options.basePath) {
+        console.warn(
+          `Better Auth basePath ${options.basePath} does not match convex() basePath ${opts.options.basePath}.`
+        );
+      }
+    },
+    schema,
     hooks: {
-      before: [...bearer.hooks.before],
+      before: [
+        ...bearer.hooks.before,
+        {
+          matcher: (ctx) => {
+            return !ctx.context.adapter.options?.isRunMutationCtx;
+          },
+          handler: createAuthMiddleware(async (ctx) => {
+            ctx.query = { ...ctx.query, disableRefresh: true };
+            ctx.context.internalAdapter.deleteSession = async (..._args: unknown[]) => {
+              //
+            };
+            const knownSafePaths = ["/api-key/list", "/api-key/get"];
+            const warnSkippedWrite = (method: string) => {
+              if (ctx.path && !knownSafePaths.includes(ctx.path)) {
+                console.warn(
+                  `[convex-gate] Write operation "${method}" skipped in query context for ${ctx.path}`
+                );
+              }
+            };
+            const noopCountWrite = (method: string) => {
+              return async (..._args: unknown[]) => {
+                warnSkippedWrite(method);
+                return 0;
+              };
+            };
+            const noopVoidWrite = (method: string) => {
+              return async (..._args: unknown[]) => {
+                warnSkippedWrite(method);
+              };
+            };
+            ctx.context.adapter.create = noopCountWrite(
+              "create"
+            ) as typeof ctx.context.adapter.create;
+            ctx.context.adapter.update = noopCountWrite(
+              "update"
+            ) as typeof ctx.context.adapter.update;
+            ctx.context.adapter.updateMany = noopCountWrite(
+              "updateMany"
+            ) as typeof ctx.context.adapter.updateMany;
+            ctx.context.adapter.delete = noopVoidWrite(
+              "delete"
+            ) as typeof ctx.context.adapter.delete;
+            ctx.context.adapter.deleteMany = noopCountWrite(
+              "deleteMany"
+            ) as typeof ctx.context.adapter.deleteMany;
+            return { context: ctx };
+          }),
+        },
+      ],
       after: [
-        ...oidcProvider.hooks.after,
+        ...normalizeAfterHooks(oidcProvider.hooks.after),
         {
           matcher: (ctx) =>
             Boolean(
@@ -208,6 +301,9 @@ export function convex(opts: {
                 ctx.path?.startsWith("/callback") ||
                 ctx.path?.startsWith("/oauth2/callback") ||
                 ctx.path?.startsWith("/magic-link/verify") ||
+                ctx.path?.startsWith("/email-otp/verify-email") ||
+                ctx.path?.startsWith("/phone-number/verify") ||
+                ctx.path?.startsWith("/siwe/verify") ||
                 ctx.path?.startsWith("/update-session") ||
                 (ctx.path?.startsWith("/get-session") && ctx.context.session)
             ),

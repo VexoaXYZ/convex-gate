@@ -303,6 +303,9 @@ export function createClient<DataModel extends GenericDataModel = GenericDataMod
       createConvexGateAdapter({
         store: createComponentStore(ctx, component),
         debugLogs: config?.verbose ?? false,
+        adapterOptions: {
+          isRunMutationCtx: "runMutation" in ctx,
+        },
       }),
     getAuth: async (createAuth: CreateAuth<DataModel>, ctx: GenericCtx<DataModel>) => ({
       auth: createAuth(ctx),

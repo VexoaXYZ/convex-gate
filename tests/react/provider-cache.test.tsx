@@ -39,6 +39,7 @@ function flushPromises() {
 function createAuthClient(options?: {
   initialSession?: { session: { id: string } } | null;
   tokenSequence?: Array<string | null>;
+  verifyOneTimeTokenResponse?: unknown;
 }) {
   let session = options?.initialSession ?? { session: { id: "session-1" } };
   const tokenSequence = [...(options?.tokenSequence ?? [])];
@@ -57,6 +58,11 @@ function createAuthClient(options?: {
         data: session,
         isPending: false,
       };
+    },
+    crossDomain: {
+      oneTimeToken: {
+        verify: vi.fn(async () => options?.verifyOneTimeTokenResponse ?? { data: session }),
+      },
     },
     getSession: vi.fn(async () => ({ data: session })),
     updateSession: vi.fn(),
@@ -248,5 +254,129 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
 
     expect(await latestAuthState!.fetchAccessToken()).toBe("token-2");
     expect(authClient.getTokenMock()).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes ott redirects while completing session recovery", async () => {
+    const authClient = createAuthClient({
+      initialSession: null,
+      verifyOneTimeTokenResponse: {
+        data: {
+          session: {
+            token: "ott-session-token",
+          },
+        },
+      },
+    });
+    const replaceStateSpy = vi.spyOn(window.history, "replaceState");
+
+    window.history.replaceState({}, "", "/app?ott=test-ott");
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ConvexBetterAuthProvider,
+          {
+            authClient: authClient as any,
+            client: {} as any,
+          },
+          React.createElement("div")
+        )
+      );
+      await flushPromises();
+    });
+
+    expect(authClient.crossDomain.oneTimeToken.verify).toHaveBeenCalledWith({
+      token: "test-ott",
+    });
+    expect(authClient.updateSession).toHaveBeenCalledTimes(2);
+    expect(authClient.getSession).toHaveBeenCalledTimes(1);
+    expect(authClient.getSession).toHaveBeenCalledWith({
+      fetchOptions: {
+        headers: {
+          Authorization: "Bearer ott-session-token",
+        },
+      },
+    });
+    const lastCall = replaceStateSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toEqual({});
+    expect(lastCall?.[1]).toBe("");
+    expect(String(lastCall?.[2])).toBe("http://localhost:3000/app");
+  });
+
+  it("treats top-level verify session payloads as a successful ott completion", async () => {
+    const authClient = createAuthClient({
+      initialSession: null,
+      verifyOneTimeTokenResponse: {
+        session: {
+          token: "top-level-ott-token",
+        },
+      },
+    });
+
+    window.history.replaceState({}, "", "/app?ott=test-ott");
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ConvexBetterAuthProvider,
+          {
+            authClient: authClient as any,
+            client: {} as any,
+          },
+          React.createElement("div")
+        )
+      );
+      await flushPromises();
+    });
+
+    expect(authClient.crossDomain.oneTimeToken.verify).toHaveBeenCalledWith({
+      token: "test-ott",
+    });
+    expect(authClient.getSession).toHaveBeenCalledWith({
+      fetchOptions: {
+        headers: {
+          Authorization: "Bearer top-level-ott-token",
+        },
+      },
+    });
+    expect(authClient.updateSession).toHaveBeenCalledTimes(2);
+    expect(window.location.href).toBe("http://localhost:3000/app");
+  });
+
+  it("still completes ott handling when verify succeeds before session fetch catches up", async () => {
+    const authClient = createAuthClient({
+      initialSession: null,
+      verifyOneTimeTokenResponse: {
+        data: {
+          session: {
+            id: "session-from-verify",
+            token: "ott-session-token",
+          },
+        },
+      },
+    });
+    authClient.getSession = vi.fn(async () => ({ data: null }));
+
+    window.history.replaceState({}, "", "/app?ott=test-ott");
+
+    await act(async () => {
+      root.render(
+        React.createElement(
+          ConvexBetterAuthProvider,
+          {
+            authClient: authClient as any,
+            client: {} as any,
+          },
+          React.createElement("div")
+        )
+      );
+      await flushPromises();
+    });
+
+    expect(authClient.crossDomain.oneTimeToken.verify).toHaveBeenCalledWith({
+      token: "test-ott",
+    });
+    expect(authClient.updateSession).toHaveBeenCalledTimes(1);
+    expect(window.location.href).toBe("http://localhost:3000/app");
   });
 });

@@ -165,4 +165,39 @@ describe("createInMemoryAuthComponent", () => {
     ]);
     expect(verification?.id).toBe("verification-1");
   });
+
+  it("finds social accounts by providerId and accountId", async () => {
+    const component = createInMemoryAuthComponent({
+      initialState: {
+        account: [
+          {
+            id: "account-1",
+            userId: "user-1",
+            providerId: "discord",
+            accountId: "discord-user-1",
+            accessToken: "token-1",
+          },
+          {
+            id: "account-2",
+            userId: "user-2",
+            providerId: "github",
+            accountId: "discord-user-1",
+            accessToken: "token-2",
+          },
+        ],
+      },
+    });
+
+    const account = await component.crud.findOne("account", [
+      { field: "providerId", value: "discord", operator: "eq", connector: "AND" },
+      { field: "accountId", value: "discord-user-1", operator: "eq", connector: "AND" },
+    ]);
+
+    expect(account).toMatchObject({
+      id: "account-1",
+      userId: "user-1",
+      providerId: "discord",
+      accountId: "discord-user-1",
+    });
+  });
 });
