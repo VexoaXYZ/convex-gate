@@ -217,7 +217,7 @@ function applyCorsHeaders(
   exposedHeaders: string[]
 ) {
   const origin = request.headers.get("origin");
-  if (!origin || (allowedOrigins.length && !allowedOrigins.includes(origin))) {
+  if (!origin || !allowedOrigins.length || !allowedOrigins.includes(origin)) {
     return response;
   }
   const headers = new Headers(response.headers);
@@ -401,7 +401,7 @@ export function createClient<DataModel extends GenericDataModel = GenericDataMod
             const origin = request.headers.get("origin");
             const allowedOrigins = await getAllowedOrigins(request);
             const headers = new Headers();
-            if (origin && (!allowedOrigins.length || allowedOrigins.includes(origin))) {
+            if (origin && allowedOrigins.length && allowedOrigins.includes(origin)) {
               headers.set("access-control-allow-origin", origin);
               headers.set("access-control-allow-credentials", "true");
               headers.set("access-control-allow-methods", "GET, POST, OPTIONS");

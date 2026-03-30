@@ -132,11 +132,7 @@ function isDebugEnabled() {
     return false;
   }
   try {
-    const url = new URL(window.location.href);
-    return (
-      url.searchParams.get("debugAuth") === "1" ||
-      window.localStorage.getItem("convex-gate-debug") === "1"
-    );
+    return window.localStorage.getItem("convex-gate-debug") === "1";
   } catch {
     return false;
   }
@@ -225,7 +221,7 @@ export function getTokenExpiry(token: string): number | null {
 
 export function isTokenExpired(token: string, now: number = Date.now()): boolean {
   const exp = getTokenExpiry(token);
-  if (!exp) return false; // Can't determine — assume valid
+  if (!exp) return true; // Unparseable — force refresh to be safe
   return now >= exp - 30_000; // Treat as expired 30s before actual expiry
 }
 
@@ -357,6 +353,19 @@ export function ConvexBetterAuthProvider({
       const crossDomainAuthClient = authClient;
       const sessionClient = authClient as BetterAuthSessionClient;
       try {
+        // CSRF check: a verifier must have been set before the OAuth redirect.
+        // If missing, this OTT didn't originate from this browser session.
+        const consumeVerifier = (crossDomainAuthClient as any).crossDomain
+          ?.consumeOttVerifier;
+        if (typeof consumeVerifier === "function") {
+          const verifier = consumeVerifier();
+          if (!verifier) {
+            pushDebugEvent("ott:error", {
+              message: "OTT verifier missing — possible login CSRF",
+            });
+            return;
+          }
+        }
         const verifyOneTimeToken =
           crossDomainAuthClient.crossDomain.oneTimeToken?.verify ??
           crossDomainAuthClient.crossDomain.verifyOneTimeToken;

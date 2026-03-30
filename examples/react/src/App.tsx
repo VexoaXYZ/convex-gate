@@ -31,12 +31,11 @@ function isDebugEnabled() {
   if (typeof window === "undefined") {
     return false;
   }
-  const url = new URL(window.location.href);
-  return (
-    url.searchParams.get("debugAuth") === "1" ||
-    url.searchParams.has("ott") ||
-    window.localStorage.getItem("convex-gate-debug") === "1"
-  );
+  try {
+    return window.localStorage.getItem("convex-gate-debug") === "1";
+  } catch {
+    return false;
+  }
 }
 
 function DebugAuthPanel() {

@@ -36,6 +36,15 @@ function flushPromises() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** Build a fake JWT whose payload includes an `exp` claim 1 hour from now. */
+function fakeJwt(label: string): string {
+  const header = btoa(JSON.stringify({ alg: "none" }));
+  const payload = btoa(
+    JSON.stringify({ sub: label, exp: Math.floor(Date.now() / 1000) + 3600 })
+  );
+  return `${header}.${payload}.sig`;
+}
+
 function createAuthClient(options?: {
   initialSession?: { session: { id: string } } | null;
   tokenSequence?: Array<string | null>;
@@ -125,6 +134,8 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
   });
 
   it("scopes initialToken to each provider instance", async () => {
+    const token1 = fakeJwt("initial-token-1");
+    const token2 = fakeJwt("initial-token-2");
     const firstAuthClient = createAuthClient();
 
     await act(async () => {
@@ -134,7 +145,7 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
           {
             authClient: firstAuthClient as any,
             client: {} as any,
-            initialToken: "initial-token-1",
+            initialToken: token1,
           },
           React.createElement("div")
         )
@@ -143,7 +154,7 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
     });
 
     expect(latestAuthState).not.toBeNull();
-    expect(await latestAuthState!.fetchAccessToken()).toBe("initial-token-1");
+    expect(await latestAuthState!.fetchAccessToken()).toBe(token1);
 
     await act(async () => {
       root.unmount();
@@ -159,7 +170,7 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
           {
             authClient: secondAuthClient as any,
             client: {} as any,
-            initialToken: "initial-token-2",
+            initialToken: token2,
           },
           React.createElement("div")
         )
@@ -168,7 +179,7 @@ describe("ConvexBetterAuthProvider token cache behavior", () => {
     });
 
     expect(latestAuthState).not.toBeNull();
-    expect(await latestAuthState!.fetchAccessToken()).toBe("initial-token-2");
+    expect(await latestAuthState!.fetchAccessToken()).toBe(token2);
     expect(secondAuthClient.getTokenMock()).not.toHaveBeenCalled();
   });
 
