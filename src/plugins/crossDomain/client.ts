@@ -200,11 +200,14 @@ export function crossDomainClient(
             ...options.headers,
             "Better-Auth-Cookie": getCookie(storage.getItem(cookieName) || "{}"),
           };
-          // Set a CSRF verifier before OAuth redirects so the OTT consumer
-          // can confirm the redirect originated from this browser session.
+          // Set a CSRF verifier before any auth flow that can result in an
+          // OTT redirect (social OAuth, magic-link, email-OTP verify, etc.).
           if (
             url.includes("/sign-in/social") ||
-            url.includes("/sign-in/oauth")
+            url.includes("/sign-in/oauth") ||
+            url.includes("/magic-link/") ||
+            url.includes("/email-otp/") ||
+            url.includes("/verify-email")
           ) {
             const verifier = Math.random().toString(36).slice(2) +
               Math.random().toString(36).slice(2);
