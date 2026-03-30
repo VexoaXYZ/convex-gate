@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Github, Mail, User } from "lucide-react";
+import { Loader2, Github, Mail, MessageCircle, User } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
 const inputClass =
@@ -28,11 +28,19 @@ export function SignIn() {
     }
   };
 
-  const handleSocial = async (provider: "github" | "google") => {
+  const handleSocial = async (provider: "discord" | "github" | "google") => {
     setSocialLoading(provider);
     try {
+      const callbackURL =
+        typeof window !== "undefined"
+          ? new URL(window.location.href).toString()
+          : import.meta.env.VITE_SITE_URL || "/";
       await authClient.signIn.social(
-        { provider },
+        {
+          provider,
+          callbackURL,
+          errorCallbackURL: callbackURL,
+        },
         { onError: (ctx) => alert(ctx.error.message) }
       );
     } finally {
@@ -91,7 +99,16 @@ export function SignIn() {
       </div>
 
       {/* Social */}
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-3 gap-2.5">
+        <button
+          type="button"
+          onClick={() => handleSocial("discord")}
+          disabled={socialLoading !== null}
+          className="h-10 rounded-lg text-[12px] font-[500] text-[var(--text-secondary)] bg-[var(--bg-input)] border border-[var(--border)] flex items-center justify-center gap-2 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-50 cursor-pointer"
+        >
+          {socialLoading === "discord" ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+          Discord
+        </button>
         <button
           type="button"
           onClick={() => handleSocial("github")}

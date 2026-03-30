@@ -62,6 +62,7 @@ export interface ConvexGateStore {
 export interface ConvexGateAdapterConfig {
   store: ConvexGateStore;
   debugLogs?: DBAdapterDebugLogOption;
+  adapterOptions?: Record<string, unknown>;
 }
 
 function cloneWhere(where: CleanedWhere[] | undefined): CleanedWhere[] | undefined {
@@ -89,6 +90,7 @@ function withOptional<T extends object, K extends string, V>(
 export function createConvexGateAdapter({
   store,
   debugLogs = false,
+  adapterOptions,
 }: ConvexGateAdapterConfig) {
   return createAdapterFactory({
     config: {
@@ -115,6 +117,7 @@ export function createConvexGateAdapter({
       },
     },
     adapter: () => ({
+      options: adapterOptions,
       create<T extends Record<string, unknown>>({
         model,
         data,

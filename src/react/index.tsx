@@ -73,9 +73,18 @@ type ConvexTokenResponse = {
 type CrossDomainVerifyResponse = {
   data?: {
     session?: {
+      id?: string;
       token?: string | null;
     } | null;
   } | null;
+  session?: {
+    id?: string;
+    token?: string | null;
+  } | null;
+} | null;
+
+type SessionFetchResponse = {
+  data?: AuthSessionData;
 } | null;
 
 type BetterAuthSessionClient = AuthClient & {
@@ -84,7 +93,7 @@ type BetterAuthSessionClient = AuthClient & {
     fetchOptions?: {
       headers?: Record<string, string>;
     };
-  }): Promise<unknown>;
+  }): Promise<SessionFetchResponse | unknown>;
 };
 
 type ConvexPluginMethods = {
@@ -95,7 +104,10 @@ type ConvexPluginMethods = {
 
 type CrossDomainPluginMethods = {
   crossDomain: {
-    verifyOneTimeToken(args: { token: string }): Promise<CrossDomainVerifyResponse>;
+    oneTimeToken?: {
+      verify(args: { token: string }): Promise<CrossDomainVerifyResponse>;
+    };
+    verifyOneTimeToken?: (args: { token: string }) => Promise<CrossDomainVerifyResponse>;
   };
   updateSession?(): void;
 };
@@ -103,7 +115,101 @@ type CrossDomainPluginMethods = {
 function hasCrossDomainClient(
   client: AuthClient,
 ): client is AuthClient & CrossDomainPluginMethods {
-  return "crossDomain" in client;
+  try {
+    // Better Auth wraps the client in a Proxy whose target is a bare function,
+    // so the `in` operator and `typeof === "object"` checks both fail.
+    // Access the property through the Proxy's get-trap instead.
+    const cd = (client as AuthClient & Partial<CrossDomainPluginMethods>)
+      .crossDomain;
+    return cd != null;
+  } catch {
+    return false;
+  }
+}
+
+function isDebugEnabled() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    const url = new URL(window.location.href);
+    return (
+      url.searchParams.get("debugAuth") === "1" ||
+      window.localStorage.getItem("convex-gate-debug") === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function pushDebugEvent(event: string, data?: unknown) {
+  if (!isDebugEnabled() || typeof window === "undefined") {
+    return;
+  }
+  const target = window as Window & {
+    __CONVEX_GATE_DEBUG__?: Array<{
+      at: string;
+      event: string;
+      data?: unknown;
+    }>;
+  };
+  target.__CONVEX_GATE_DEBUG__ ??= [];
+  target.__CONVEX_GATE_DEBUG__.push({
+    at: new Date().toISOString(),
+    event,
+    data,
+  });
+  console.debug("[convex-gate]", event, data);
+}
+
+function extractSessionData(result: unknown): AuthSessionData {
+  if (!result || typeof result !== "object" || !("data" in result)) {
+    return null;
+  }
+  const data = (result as { data?: AuthSessionData }).data;
+  return data ?? null;
+}
+
+function extractVerifySession(result: CrossDomainVerifyResponse) {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  if ("data" in result && result.data?.session) {
+    return result.data.session;
+  }
+  if ("session" in result && result.session) {
+    return result.session;
+  }
+  return null;
+}
+
+async function waitForSession(
+  authClient: BetterAuthSessionClient,
+  crossDomainAuthClient: AuthClient & CrossDomainPluginMethods
+) {
+  let result = await authClient.getSession();
+  pushDebugEvent("ott:get-session:attempt", {
+    attempt: 0,
+    session: extractSessionData(result),
+  });
+  if (extractSessionData(result)?.session) {
+    return result;
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, attempt * 75));
+    crossDomainAuthClient.updateSession?.();
+    result = await authClient.getSession();
+    pushDebugEvent("ott:get-session:attempt", {
+      attempt,
+      session: extractSessionData(result),
+    });
+    if (extractSessionData(result)?.session) {
+      return result;
+    }
+  }
+
+  return result;
 }
 
 export function getTokenExpiry(token: string): number | null {
@@ -235,25 +341,66 @@ export function ConvexBetterAuthProvider({
       }
       const url = new URL(window.location.href);
       const token = url.searchParams.get("ott");
-      if (!token || !hasCrossDomainClient(authClient)) {
+      if (!token) {
         return;
       }
+      // Always strip the one-time token from the URL so it cannot be retried.
+      pushDebugEvent("ott:found", { token, href: window.location.href });
       url.searchParams.delete("ott");
       window.history.replaceState({}, "", url);
-      const crossDomainAuthClient = authClient;
-      const result = await crossDomainAuthClient.crossDomain.verifyOneTimeToken({
-        token,
-      });
-      const session = result?.data?.session;
-      if (session?.token) {
-        await (authClient as BetterAuthSessionClient).getSession({
-          fetchOptions: {
-            headers: {
-              Authorization: `Bearer ${session.token}`,
-            },
-          },
+      if (!hasCrossDomainClient(authClient)) {
+        pushDebugEvent("ott:error", {
+          message: "Cross-domain client not detected",
         });
-        crossDomainAuthClient.updateSession?.();
+        return;
+      }
+      const crossDomainAuthClient = authClient;
+      const sessionClient = authClient as BetterAuthSessionClient;
+      try {
+        const verifyOneTimeToken =
+          crossDomainAuthClient.crossDomain.oneTimeToken?.verify ??
+          crossDomainAuthClient.crossDomain.verifyOneTimeToken;
+        if (!verifyOneTimeToken) {
+          pushDebugEvent("ott:error", {
+            message: "Cross-domain client missing OTT verify method",
+          });
+          return;
+        }
+        const verifyResult = await verifyOneTimeToken({ token });
+        pushDebugEvent("ott:verify:success", verifyResult);
+        const verifiedSession = extractVerifySession(verifyResult);
+        const sessionToken = verifiedSession?.token ?? null;
+        if (verifiedSession) {
+          crossDomainAuthClient.updateSession?.();
+        }
+        const sessionResult = sessionToken
+          ? await sessionClient.getSession({
+              fetchOptions: {
+                headers: {
+                  Authorization: `Bearer ${sessionToken}`,
+                },
+              },
+            })
+          : await waitForSession(sessionClient, crossDomainAuthClient);
+        const sessionData = extractSessionData(sessionResult);
+        if (sessionData?.session) {
+          crossDomainAuthClient.updateSession?.();
+          pushDebugEvent("ott:complete", { session: sessionData.session, href: url.toString() });
+          return;
+        }
+        if (verifiedSession) {
+          pushDebugEvent("ott:complete", {
+            session: verifiedSession,
+            href: url.toString(),
+            recoveredVia: "verify",
+          });
+          return;
+        }
+        pushDebugEvent("ott:session-missing", sessionResult);
+      } catch (error) {
+        pushDebugEvent("ott:error", {
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     })();
   }, [authClient]);

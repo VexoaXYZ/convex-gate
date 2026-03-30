@@ -13,9 +13,28 @@ interface StoredCookie {
   expires: string | null;
 }
 
+function splitSetCookieHeader(header: string): string[] {
+  const cookies: string[] = [];
+  let start = 0;
+
+  for (let i = 0; i < header.length; i += 1) {
+    if (header[i] === "," && /^\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+=/.test(header.slice(i + 1))) {
+      cookies.push(header.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+
+  const lastCookie = header.slice(start).trim();
+  if (lastCookie) {
+    cookies.push(lastCookie);
+  }
+
+  return cookies;
+}
+
 export function parseSetCookieHeader(header: string): Map<string, CookieAttributes> {
   const cookieMap = new Map<string, CookieAttributes>();
-  for (const cookie of header.split(", ")) {
+  for (const cookie of splitSetCookieHeader(header)) {
     const [nameValue, ...attributes] = cookie.split("; ");
     if (!nameValue) {
       continue;
@@ -73,12 +92,13 @@ export function getCookie(cookie: string) {
   } catch {
     //
   }
-  return Object.entries(parsed).reduce((acc, [key, value]) => {
+  const pairs = Object.entries(parsed).flatMap(([key, value]) => {
     if (value.expires && new Date(value.expires) < new Date()) {
-      return acc;
+      return [];
     }
-    return `${acc}; ${key}=${value.value}`;
-  }, "");
+    return [`${key}=${value.value}`];
+  });
+  return pairs.join("; ");
 }
 
 export function crossDomainClient(
@@ -100,12 +120,30 @@ export function crossDomainClient(
   return {
     id: "cross-domain",
     $InferServerPlugin: {} as ReturnType<typeof crossDomain>,
-    getActions(_, $store) {
+    getActions($fetch, $store) {
       store = $store;
+      const getCookieAction = () =>
+        getCookie(storage?.getItem(cookieName) || "{}");
+      const updateSessionAction = () => {
+        $store.notify("$sessionSignal");
+      };
       return {
-        getCookie: () => getCookie(storage?.getItem(cookieName) || "{}"),
-        updateSession: () => {
-          $store.notify("$sessionSignal");
+        // Top-level for backwards compat (waitForSession, etc.)
+        getCookie: getCookieAction,
+        updateSession: updateSessionAction,
+        // Nested under `crossDomain` so Better Auth's Proxy resolves the full
+        // path chain: authClient.crossDomain.oneTimeToken.verify(…)
+        crossDomain: {
+          getCookie: getCookieAction,
+          updateSession: updateSessionAction,
+          oneTimeToken: {
+            verify: async ({ token }: { token: string }) => {
+              return $fetch("/cross-domain/one-time-token/verify", {
+                method: "POST",
+                body: { token },
+              });
+            },
+          },
         },
       };
     },

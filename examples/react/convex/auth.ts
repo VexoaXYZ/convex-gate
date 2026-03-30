@@ -23,6 +23,14 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       requireEmailVerification: false,
     },
     socialProviders: {
+      ...(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET
+        ? {
+            discord: {
+              clientId: process.env.DISCORD_CLIENT_ID,
+              clientSecret: process.env.DISCORD_CLIENT_SECRET,
+            },
+          }
+        : {}),
       ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
         ? {
             github: {

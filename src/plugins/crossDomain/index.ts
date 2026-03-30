@@ -20,10 +20,17 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
   const oneTimeToken = oneTimeTokenPlugin();
 
   const rewriteCallbackURL = (callbackURL?: string) => {
-    if (!callbackURL || !callbackURL.startsWith("/")) {
+    if (!callbackURL) {
+      return callbackURL;
+    }
+    if (!callbackURL.startsWith("/")) {
       return callbackURL;
     }
     return new URL(callbackURL, siteUrl).toString();
+  };
+
+  const isExpoNative = (ctx: { headers?: Headers }) => {
+    return ctx.headers?.has("expo-origin");
   };
 
   return {
@@ -45,9 +52,11 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
       before: [
         {
           matcher(ctx) {
-            return Boolean(
-              ctx.request?.headers.has("better-auth-cookie") ||
-                ctx.headers?.has("better-auth-cookie")
+            return (
+              Boolean(
+                ctx.request?.headers.has("better-auth-cookie") ||
+                  ctx.headers?.has("better-auth-cookie")
+              ) && !isExpoNative(ctx)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
@@ -55,12 +64,14 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
             const headers = new Headers({
               ...Object.fromEntries(existingHeaders.entries()),
             });
-            if (!headers.get("authorization")) {
-              const cookie = headers.get("better-auth-cookie");
-              if (cookie) {
-                headers.append("cookie", cookie);
-              }
+            if (headers.get("authorization")) {
+              return;
             }
+            const cookie = headers.get("better-auth-cookie");
+            if (!cookie) {
+              return;
+            }
+            headers.append("cookie", cookie);
             return {
               context: {
                 headers,
@@ -69,7 +80,12 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
           }),
         },
         {
-          matcher: (ctx) => Boolean(ctx.method === "GET" && ctx.path?.startsWith("/verify-email")),
+          matcher: (ctx) =>
+            Boolean(
+              ctx.method === "GET" &&
+                ctx.path?.startsWith("/verify-email") &&
+                !isExpoNative(ctx)
+            ),
           handler: createAuthMiddleware(async (ctx) => {
             if (ctx.query?.callbackURL) {
               ctx.query.callbackURL = rewriteCallbackURL(ctx.query.callbackURL);
@@ -78,7 +94,7 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
           }),
         },
         {
-          matcher: (ctx) => Boolean(ctx.method === "POST"),
+          matcher: (ctx) => Boolean(ctx.method === "POST" && !isExpoNative(ctx)),
           handler: createAuthMiddleware(async (ctx) => {
             if (ctx.body?.callbackURL) {
               ctx.body.callbackURL = rewriteCallbackURL(ctx.body.callbackURL);
@@ -96,29 +112,34 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
       after: [
         {
           matcher(ctx) {
-            return Boolean(
-              ctx.request?.headers.has("better-auth-cookie") ||
-                ctx.headers?.has("better-auth-cookie")
+            return (
+              Boolean(
+                ctx.request?.headers.has("better-auth-cookie") ||
+                  ctx.headers?.has("better-auth-cookie")
+              ) && !isExpoNative(ctx)
             );
           },
           handler: createAuthMiddleware(async (ctx) => {
             const setCookie = ctx.context.responseHeaders?.get("set-cookie");
-            if (setCookie) {
-              ctx.context.responseHeaders?.delete("set-cookie");
-              ctx.setHeader("Set-Better-Auth-Cookie", setCookie);
+            if (!setCookie) {
+              return;
             }
+            ctx.context.responseHeaders?.delete("set-cookie");
+            ctx.setHeader("Set-Better-Auth-Cookie", setCookie);
           }),
         },
         {
           matcher: (ctx) =>
             Boolean(
-              ctx.path?.startsWith("/callback") ||
+              (ctx.path?.startsWith("/callback") ||
                 ctx.path?.startsWith("/oauth2/callback") ||
-                ctx.path?.startsWith("/magic-link/verify")
+                ctx.path?.startsWith("/magic-link/verify")) &&
+                !isExpoNative(ctx)
             ),
           handler: createAuthMiddleware(async (ctx) => {
             const session = ctx.context.newSession;
             if (!session) {
+              ctx.context.logger.error("No session found");
               return;
             }
             const token = generateRandomString(32);
@@ -130,6 +151,7 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
             });
             const redirectTo = ctx.context.responseHeaders?.get("location");
             if (!redirectTo) {
+              ctx.context.logger.error("No redirect to found");
               return;
             }
             const url = new URL(redirectTo);
