@@ -112,8 +112,10 @@ export function crossDomainClient(
   } = {}
 ) {
   let store: ClientStore | null = null;
-  const cookieName = `${opts.storagePrefix || "better-auth"}_cookie`;
-  const localCacheName = `${opts.storagePrefix || "better-auth"}_session_data`;
+  const prefix = opts.storagePrefix || "better-auth";
+  const cookieName = `${prefix}_cookie`;
+  const localCacheName = `${prefix}_session_data`;
+  const ottVerifierKey = `${prefix}_ott_verifier`;
   const storage =
     opts.storage || (typeof window !== "undefined" ? localStorage : undefined);
 
@@ -136,6 +138,12 @@ export function crossDomainClient(
         crossDomain: {
           getCookie: getCookieAction,
           updateSession: updateSessionAction,
+          consumeOttVerifier: () => {
+            if (!storage) return null;
+            const verifier = storage.getItem(ottVerifierKey);
+            if (verifier) storage.setItem(ottVerifierKey, "");
+            return verifier;
+          },
           oneTimeToken: {
             verify: async ({ token }: { token: string }) => {
               return $fetch("/cross-domain/one-time-token/verify", {
@@ -172,6 +180,10 @@ export function crossDomainClient(
               !opts.disableCache
             ) {
               storage.setItem(localCacheName, JSON.stringify(context.data));
+              storage.setItem(
+                `${localCacheName}_exp`,
+                String(Date.now() + 5 * 60 * 1000)
+              );
             }
           },
         },
@@ -188,9 +200,29 @@ export function crossDomainClient(
             ...options.headers,
             "Better-Auth-Cookie": getCookie(storage.getItem(cookieName) || "{}"),
           };
+          // Set a CSRF verifier before any auth flow that can result in an
+          // OTT redirect (social OAuth, magic-link, email-OTP verify, etc.).
+          if (
+            url.includes("/sign-in/social") ||
+            url.includes("/sign-in/oauth") ||
+            url.includes("/magic-link/") ||
+            url.includes("/email-otp/") ||
+            url.includes("/verify-email")
+          ) {
+            const verifier = Math.random().toString(36).slice(2) +
+              Math.random().toString(36).slice(2);
+            storage.setItem(ottVerifierKey, verifier);
+          }
+          // Evict expired session cache
+          const cacheExp = storage.getItem(`${localCacheName}_exp`);
+          if (cacheExp && Date.now() >= Number(cacheExp)) {
+            storage.setItem(localCacheName, "{}");
+            storage.setItem(`${localCacheName}_exp`, "");
+          }
           if (url.includes("/sign-out")) {
             storage.setItem(cookieName, "{}");
             storage.setItem(localCacheName, "{}");
+            storage.setItem(`${localCacheName}_exp`, "");
           }
           return {
             url,

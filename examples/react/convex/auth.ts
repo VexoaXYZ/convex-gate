@@ -20,7 +20,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      requireEmailVerification: true,
     },
     socialProviders: {
       ...(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET

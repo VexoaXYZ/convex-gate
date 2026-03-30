@@ -16,7 +16,14 @@ function omitUndefined<T extends object>(value: T): DefinedProperties<T> {
   return Object.fromEntries(entries) as DefinedProperties<T>;
 }
 
-export function crossDomain({ siteUrl }: { siteUrl: string }) {
+export function crossDomain({
+  siteUrl,
+  ottExpirySeconds = 60,
+}: {
+  siteUrl: string;
+  /** One-time token expiry in seconds. Defaults to 60. */
+  ottExpirySeconds?: number;
+}) {
   const oneTimeToken = oneTimeTokenPlugin();
 
   const rewriteCallbackURL = (callbackURL?: string) => {
@@ -143,7 +150,7 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
               return;
             }
             const token = generateRandomString(32);
-            const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
+            const expiresAt = new Date(Date.now() + ottExpirySeconds * 1000);
             await ctx.context.internalAdapter.createVerificationValue({
               value: session.session.token,
               identifier: `one-time-token:${token}`,
@@ -162,12 +169,15 @@ export function crossDomain({ siteUrl }: { siteUrl: string }) {
       ],
     },
     endpoints: {
+      // NOTE: This endpoint should be rate-limited at the HTTP layer (e.g.
+      // Convex rate limiting or an upstream proxy) to prevent brute-force
+      // attempts against one-time tokens.
       verifyOneTimeToken: createAuthEndpoint(
         "/cross-domain/one-time-token/verify",
         {
           method: "POST",
           body: z.object({
-            token: z.string(),
+            token: z.string().min(1).max(128),
           }),
         },
         async (ctx) => {

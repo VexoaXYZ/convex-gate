@@ -59,7 +59,7 @@ describe("isTokenExpired", () => {
     expect(isTokenExpired(createFakeJwt(exp))).toBe(false);
   });
 
-  it("returns false for malformed token (assumes valid)", () => {
-    expect(isTokenExpired("garbage")).toBe(false);
+  it("returns true for malformed token (forces refresh)", () => {
+    expect(isTokenExpired("garbage")).toBe(true);
   });
 });
